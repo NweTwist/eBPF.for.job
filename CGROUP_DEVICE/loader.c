@@ -9,14 +9,14 @@
 #include <linux/bpf.h>
 
 static volatile sig_atomic_t exiting = 0;
-static void handle_sig(int sig) { exiting = 1; }
+static void handle_sig(int sig) { (void)sig; exiting = 1; }
 
 int main(int argc, char **argv)
 {
     const char *cg_path;
     const char *obj_path;
     struct bpf_object *obj = NULL;
-    struct bpf_program *prog;
+    struct bpf_program *prog = NULL, *it = NULL;
     int cg_fd = -1, prog_fd = -1, err;
 
     if (argc != 3) {
@@ -29,41 +29,48 @@ int main(int argc, char **argv)
 
     cg_fd = open(cg_path, O_RDONLY | O_DIRECTORY);
     if (cg_fd < 0) {
-        fprintf(stderr, "open('%s') failed: %s\n", cg_path, strerror(errno));
+        fprintf(stderr, "open cgroup path failed\n");
         return 1;
     }
 
     obj = bpf_object__open_file(obj_path, NULL);
     if (!obj) {
-        fprintf(stderr, "failed to open BPF object '%s'\n", obj_path);
+        fprintf(stderr, "open BPF object failed\n");
         close(cg_fd);
         return 1;
     }
 
     err = bpf_object__load(obj);
     if (err) {
-        fprintf(stderr, "failed to load BPF object: %d\n", err);
+        fprintf(stderr, "load BPF object failed\n");
         bpf_object__close(obj);
         close(cg_fd);
         return 1;
     }
 
-    bpf_object__for_each_program(prog, obj) {
-        const char *sec = bpf_program__section_name(prog);
+    bpf_object__for_each_program(it, obj) {
+        const char *sec = bpf_program__section_name(it);
         if (sec && strcmp(sec, "cgroup/dev") == 0) {
-            prog_fd = bpf_program__fd(prog);
+            prog = it;
             break;
         }
     }
 
-    if (prog_fd < 0) {
-        prog = bpf_object__next_program(NULL, obj);
-        if (prog)
-            prog_fd = bpf_program__fd(prog);
+    if (!prog) {
+        // корректный вызов: (obj, prev), чтобы взять первый, prev = NULL
+        prog = bpf_object__next_program(obj, NULL);
     }
 
+    if (!prog) {
+        fprintf(stderr, "no program found in object\n");
+        bpf_object__close(obj);
+        close(cg_fd);
+        return 1;
+    }
+
+    prog_fd = bpf_program__fd(prog);
     if (prog_fd < 0) {
-        fprintf(stderr, "couldn't find program fd in object\n");
+        fprintf(stderr, "invalid program fd\n");
         bpf_object__close(obj);
         close(cg_fd);
         return 1;
@@ -71,14 +78,14 @@ int main(int argc, char **argv)
 
     err = bpf_prog_attach(prog_fd, cg_fd, BPF_CGROUP_DEVICE, 0);
     if (err) {
-        fprintf(stderr, "bpf_prog_attach failed: %s\n", strerror(errno));
+        fprintf(stderr, "bpf_prog_attach failed\n");
         bpf_object__close(obj);
         close(cg_fd);
         return 1;
     }
 
     printf("Attached prog fd=%d to cgroup '%s' (fd=%d)\n", prog_fd, cg_path, cg_fd);
-    printf("Send SIGINT/SIGTERM to detach and exit\n");
+    printf("Press Ctrl+C to detach and exit\n");
 
     signal(SIGINT, handle_sig);
     signal(SIGTERM, handle_sig);
@@ -86,7 +93,7 @@ int main(int argc, char **argv)
     while (!exiting)
         pause();
 
-    bpf_prog_detach2(prog_fd, cg_fd, BPF_PROG_TYPE_CGROUP_DEVICE);
+    bpf_prog_detach2(prog_fd, cg_fd, BPF_CGROUP_DEVICE);
     bpf_object__close(obj);
     close(cg_fd);
     printf("Detached and exiting\n");
