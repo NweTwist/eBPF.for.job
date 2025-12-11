@@ -24,9 +24,11 @@ static __always_inline bool is_block_dev(__u32 access_type){
     return access_type & BPF_DEVCG_DEV_BLOCK;
 }
 
+#ifdef TEST_MODE
 static __always_inline bool is_char_dev (__u32 access_type){
     return access_type & BPF_DEVCG_DEV_CHAR;
 }
+#endif
 
 static __always_inline bool is_rwm(__u32 access_type){
     return access_type & (BPF_DEVCG_ACC_READ | BPF_DEVCG_ACC_WRITE | BPF_DEVCG_ACC_MKNOD);
