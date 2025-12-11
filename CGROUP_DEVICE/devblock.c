@@ -1,6 +1,5 @@
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
-#include <linux/errno.h>
 
 char _license[] SEC("license") = "GPL";
 
@@ -25,19 +24,19 @@ int devblock (struct bpf_cgroup_dev_ctx *ctx)
     if (is_char_dev(ctx->access_type) && is_rwm(ctx->access_type)) {
 
         if (ctx->major == 1 && ctx->minor == 3){
-            return -EPERM;
+            return 0;
         }
     }
     
-    return 0;
+    return 1;
 
 #else
     if (is_block_dev(ctx->access_type) && is_rwm(ctx->access_type)){
         if(ctx->major==0 || (ctx->major >= 65 && ctx->major <= 71) || ctx->major == 259) {
-            return -EPERM; 
+            return 0; 
         }
     }
-    return 0;
+    return 1;
 
 #endif
 }
