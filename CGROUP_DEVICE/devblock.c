@@ -40,11 +40,12 @@ int devblock (struct bpf_cgroup_dev_ctx *ctx)
     return 1;
 #else
     if (is_block_dev(ctx->access_type) && is_rwm(ctx->access_type)){
-        if (ctx->major == 0 || (ctx->major >= 65 && ctx->major <= 71) || ctx->major == 259) {
-            return 0;
+        // Блокируем флоппи (major=2)
+        if (ctx->major == 2) {
+            return 0; // запретить
         }
     }
-    return 1;
+    return 1; // разрешить прочее
 #endif
 }
 
